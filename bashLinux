@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+presetup() {
+    
+    illegal_users=($(ls /))
+    
+    GROUP_ALREADY_EXISTS=4
+    ILLEGAL_USER_FOUND=2
+    USER_ALREADY_EXISTS=1
+}
+
+
+die() {
+    local category=${1}
+    local parameter_1=${2}
+    local parameter_2=${3}
+    # This is how a switch statement looks in Bash.
+    case ${category} in
+        "group")
+            echo "Group ${parameter_1} already exists."
+            exit ${GROUP_ALREADY_EXISTS}
+            ;;
+        "user")
+            case ${parameter_2} in
+                ${ILLEGAL_USER_FOUND})
+                    echo "Cannot create such user like ${parameter_1}."
+                    exit ${ILLEGAL_USER_FOUND}
+                    ;;
+                ${USER_ALREADY_EXISTS})
+                    echo "User ${parameter_1} already_exists."
+                    exit ${USER_ALREADY_EXISTS}
+                    ;;
+            esac
+            ;;
+        ?)
+            echo "Failing with unknown case."
+            exit -666
+            ;;
+    esac
+}
+
+create_group_only_if_it_doesnt_exist() {
+   
+    local group="$1"
+   
+    grep "^$group:" /etc/group &>/dev/null && die group "$group"
+    groupadd "$group"
+}
+
+create_user_only_if_it_doesnt_exist() {
+    local user="$1"
+
+    id ${user} &> /dev/null && die user "$user" $USER_ALREADY_EXISTS
+    [[ -d "/$user" ]] && die user "$user" $ILLEGAL_USER_FOUND
+
+    useradd -m "$user" ; passwd "$user"
+}
+
+main() {
+    local param group_list=() user_list=() directory=""
+
+    presetup $@
+
+    
+    for param in $@; do
+        case "$param" in 
+            -g) list="group" ;;
+            -u) list="user"  ;;
+            *) case $list in
+                "group") group_list[${#group_list[@]}]="$param" ;;
+                "user") user_list[${#user_list[@]}]="$param" ;;
+                *) continue ;;
+            esac
+        esac
+    done
+
+    for group in ${group_list[@]}; do
+        create_group_only_if_it_doesnt_exist "$group"
+    done
+
+    for user in ${user_list[@]}; do
+        create_user_only_if_it_doesnt_exist "$user"
+
+        directory="/$user"
+        mkdir "$directory"
+        chown "$user" "$directory"
+        chmod u+rwsx "$directory"
+
+        for group in ${group_list[@]}; do
+            usermod -G "$group" -a "$user"
+            setfacl -m g:"$group":rwx "$directory"
+        done
+    done
+}
+
+main $@
